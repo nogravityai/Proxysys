@@ -35,6 +35,23 @@ function build_llm_request(params, conversation_id) {
   const input = mcp_to_prism_input(params);
   const req = {
     input,
+    model: params.model || "o3",
+    tools: params.tools || [
+      {
+        type: "function",
+        function: {
+          name: "code_execution",
+          description: "Execute code in a sandbox environment",
+          parameters: {
+            type: "object",
+            properties: {
+              code: { type: "string", description: "Code to execute" },
+              language: { type: "string", description: "Programming language" },
+            },
+          },
+        },
+      },
+    ],
     previousResponseId: params.previousResponseId || params.previous_response_id || null,
     metadata: {
       conversationMode: params.conversationMode || params.conversation_mode || "main",

@@ -243,6 +243,7 @@ function create_mcp_connector(config) {
   const backoff_base_ms = config.backoff_base_ms || 2000;
 
   let last_request_time = 0;
+  let session_initialized = false;
 
   const sandbox_status = {
     state: "unknown",
@@ -250,6 +251,20 @@ function create_mcp_connector(config) {
     consecutive_failures: 0,
     last_success: 0,
   };
+
+  async function init_session() {
+    if (session_initialized) return;
+    console.log("[mcp] initializing session with Prism...");
+    try {
+      await forward_to_proxy("GET", "/auth/session", null);
+      await forward_to_proxy("GET", "/auth/entitlements", null);
+      await forward_to_proxy("GET", "/api/projects", null);
+      session_initialized = true;
+      console.log("[mcp] session initialized successfully");
+    } catch (err) {
+      console.log(`[mcp] session init warning: ${err.message}`);
+    }
+  }
 
   function set_sandbox_state(state) {
     const prev = sandbox_status.state;
@@ -334,6 +349,9 @@ function create_mcp_connector(config) {
     };
     if (cookie_string) {
       headers["Cookie"] = cookie_string;
+    }
+    if (cookies_obj.prism_oai_access_token) {
+      headers["Authorization"] = `Bearer ${cookies_obj.prism_oai_access_token}`;
     }
 
     const fetch_options = {
@@ -497,6 +515,7 @@ function create_mcp_connector(config) {
     let result;
     try {
       if (route.route_key === "llm.start") {
+        await init_session();
         result = await forward_with_retry_and_simplify(route.method, route.path, request_body, sanitized_params);
       } else {
         result = await forward_to_proxy(route.method, route.path, request_body);
