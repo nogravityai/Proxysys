@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Sensitive data / sessions & tokens
+cookies.json
+.env
+.env.*
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Archives / backups
+*.tar.gz
+*.zip
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

@@ -1,0 +1,15 @@
+{
+  "name": "proxy-middleware",
+  "version": "1.0.0",
+  "description": "High-performance transparent proxy gateway with static header injection",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "http-proxy": "^1.18.1",
+    "http2-wrapper": "^2.2.1"
+  }
+}
