@@ -4,6 +4,7 @@ const cookie_manager = require("./cookie_manager");
 const { resolve_route } = require("./routing_table");
 const { build_llm_request, parse_prism_response } = require("./input_transformer");
 const { destroy_h2_client } = require("./proxy_handler");
+const { should_sanitize, sanitize_mcp_params } = require("./intelligence_proxy");
 
 const EXCLUDE_DIRS = new Set([
   "node_modules", ".git", "dist", "build", ".next", ".nuxt",
@@ -361,8 +362,8 @@ function create_mcp_connector(config) {
       return { status: 401, data: response_data };
     }
 
-    if (response.status === 400) {
-      console.log(`[mcp] 400 detected, destroying H2 session`);
+    if (response.status === 502 || response.status === 503 || response.status === 504) {
+      console.log(`[mcp] ${response.status} detected, destroying H2 session`);
       destroy_h2_client();
     }
 
@@ -464,15 +465,17 @@ function create_mcp_connector(config) {
       return jsonrpc_error(id || null, -32600, "Invalid Request: jsonrpc must be '2.0'");
     }
 
+    const sanitized_params = should_sanitize(params) ? sanitize_mcp_params(params) : params;
+
     const route = resolve_route(method);
 
     if (!route) {
       console.log(`[mcp] WARNING: unmapped method "${method}" — trying LLM fallback`);
       const llm_route = resolve_route("tools/call");
       if (llm_route) {
-        const prism_input = build_llm_request(params);
-        const result = await forward_with_retry_and_simplify(llm_route.method, llm_route.path, prism_input, params);
-        return handle_llm_result(id, method, result, params);
+        const prism_input = build_llm_request(sanitized_params);
+        const result = await forward_with_retry_and_simplify(llm_route.method, llm_route.path, prism_input, sanitized_params);
+        return handle_llm_result(id, method, result, sanitized_params);
       }
       return jsonrpc_error(id, -32601, `Method not found: ${method}`);
     }
@@ -480,21 +483,21 @@ function create_mcp_connector(config) {
     let request_body = null;
     if (route.method === "POST") {
       if (route.route_key === "llm.start") {
-        const enriched = build_workspace_context(config, params);
+        const enriched = build_workspace_context(config, sanitized_params);
         request_body = build_llm_request(enriched);
       } else if (route.route_key === "llm.status") {
-        request_body = { request_id: params?.request_id, turn_state: params?.turn_state };
+        request_body = { request_id: sanitized_params?.request_id, turn_state: sanitized_params?.turn_state };
       } else if (route.route_key === "llm.stop") {
-        request_body = { request_id: params?.request_id, conversation_id: params?.conversation_id, turn_state: params?.turn_state };
+        request_body = { request_id: sanitized_params?.request_id, conversation_id: sanitized_params?.conversation_id, turn_state: sanitized_params?.turn_state };
       } else {
-        request_body = params || {};
+        request_body = sanitized_params || {};
       }
     }
 
     let result;
     try {
       if (route.route_key === "llm.start") {
-        result = await forward_with_retry_and_simplify(route.method, route.path, request_body, params);
+        result = await forward_with_retry_and_simplify(route.method, route.path, request_body, sanitized_params);
       } else {
         result = await forward_to_proxy(route.method, route.path, request_body);
       }
@@ -534,7 +537,7 @@ function create_mcp_connector(config) {
     }
 
     if (route.route_key === "llm.start") {
-      return handle_llm_result(id, method, result, params);
+      return handle_llm_result(id, method, result, sanitized_params);
     }
 
     const analysis = analyze_response_quality(result.data, method);

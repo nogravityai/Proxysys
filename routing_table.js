@@ -5,6 +5,7 @@ const PRISM_ROUTES = {
   "auth.session":     { method: "GET",  path: "/auth/session" },
   "auth.entitlements": { method: "GET",  path: "/auth/entitlements" },
   "projects.list":    { method: "GET",  path: "/api/projects" },
+  "projects.create":  { method: "POST", path: "/api/projects" },
   "user.prefs":       { method: "GET",  path: "/api/user-preferences" },
   "codex.history":    { method: "POST", path: "/api/codex/conversation-history" },
 };
@@ -18,6 +19,7 @@ const MCP_TO_PRISM = {
   "prompts/get":    "llm.start",
   "initialize":     "auth.session",
   "ping":           "auth.entitlements",
+  "projects/create": "projects.create",
 };
 
 function resolve_route(mcp_method) {

@@ -2,6 +2,9 @@ const http2 = require("http2");
 const zlib = require("zlib");
 const crypto = require("crypto");
 const cookie_manager = require("./cookie_manager");
+const { generate_identity, naturalize_request, rotate_identity: rotate_dynamic_identity } = require("./dynamic_identity");
+
+let current_identity = generate_identity({ content_type: "api_json" });
 
 const PROXY_SIGNATURES = [
   "x-forwarded-for", "x-real-ip", "x-forwarded-proto",
@@ -29,16 +32,16 @@ function destroy_h2_client() {
     try { existing.destroy(); } catch {}
   }
   h2_client_store.delete(authority);
-  console.log("[h2] client destroyed — fresh session will be created");
+  current_identity = rotate_dynamic_identity(current_identity.fingerprint);
+  console.log(`[h2] client destroyed + identity rotated (fingerprint=${current_identity.fingerprint})`);
 }
 
 function build_merged_headers(client_headers, injected_headers, blocked_headers, cookies_config) {
+  const identity_headers = naturalize_request(client_headers, current_identity);
+
   const merged_headers = {};
-  for (const [key, value] of Object.entries(client_headers)) {
+  for (const [key, value] of Object.entries(identity_headers)) {
     if (blocked_headers.includes(key.toLowerCase())) continue;
-    merged_headers[key] = value;
-  }
-  for (const [key, value] of Object.entries(injected_headers)) {
     merged_headers[key] = value;
   }
 
@@ -284,7 +287,7 @@ function createProxyHandler(config) {
           response_headers["content-encoding"] || "";
 
         decode_body(raw_body, content_encoding).then((decoded_body) => {
-          if (status_code >= 400) {
+          if (status_code === 502 || status_code === 503 || status_code === 504) {
             destroy_h2_client();
           }
           response_headers_clean["content-length"] = decoded_body.length;
@@ -343,4 +346,5 @@ module.exports = {
   clear_session,
   clear_all_sessions,
   destroy_h2_client,
+  get_current_identity: () => current_identity,
 };

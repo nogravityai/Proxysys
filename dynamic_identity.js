@@ -58,7 +58,7 @@ const SAFARI_UA_KEYS = [
 ];
 
 const FETCH_MODES = ["cors", "same-origin", "navigate"];
-const FETCH Dest = ["document", "empty", "script"];
+const FETCH_DEST = ["document", "empty", "script"];
 const FETCH_SITES = ["same-origin", "cross-site", "none"];
 
 const CONTENT_TYPE_PROFILES = {
