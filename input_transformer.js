@@ -33,29 +33,25 @@ function clean_payload(obj) {
 
 function build_llm_request(params, conversation_id) {
   const input = mcp_to_prism_input(params);
+  const sandbox_url = params.sandbox_url || params.metadata?.sandbox_url || null;
+  const sandbox_token = params.sandbox_token || params.metadata?.sandbox_token || null;
+  const project_id = params.project_id || params.metadata?.projectId || "6b12b4c3-90c6-4eb2-8b35-e5a7f6a25c49";
+  const user_id = params.user_id || params.metadata?.userId || "user-50eExBVyN8G7EdyjTcxSfOH2";
+
+  const metadata = {
+    projectId: project_id,
+    userId: user_id,
+    model: params.model || "gpt-5.6-sol",
+    reasoning_effort: params.reasoning_effort || "low",
+    frontend_origin: "https://prism.openai.com",
+  };
+  if (sandbox_url) metadata.sandbox_url = sandbox_url;
+  if (sandbox_token) metadata.sandbox_token = sandbox_token;
+
   const req = {
     input,
-    model: params.model || "o3",
-    tools: params.tools || [
-      {
-        type: "function",
-        function: {
-          name: "code_execution",
-          description: "Execute code in a sandbox environment",
-          parameters: {
-            type: "object",
-            properties: {
-              code: { type: "string", description: "Code to execute" },
-              language: { type: "string", description: "Programming language" },
-            },
-          },
-        },
-      },
-    ],
     previousResponseId: params.previousResponseId || params.previous_response_id || null,
-    metadata: {
-      conversationMode: params.conversationMode || params.conversation_mode || "main",
-    },
+    metadata,
     conversationId: conversation_id || params.conversationId || params.conversation_id || null,
   };
   return clean_payload(req);

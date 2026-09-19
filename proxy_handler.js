@@ -236,14 +236,7 @@ function createProxyHandler(config) {
     upstream_request.on("response", (response_headers) => {
       const status_code = response_headers[":status"] || 200;
 
-      const old_cookies = cookie_manager.load_cookies(config);
-      const had_cf_bm = old_cookies.__cf_bm;
       cookie_manager.capture_set_cookie(response_headers, config);
-      const new_cookies = cookie_manager.load_cookies(config);
-      if (had_cf_bm && new_cookies.__cf_bm && had_cf_bm !== new_cookies.__cf_bm) {
-        console.log(`[proxy] __cf_bm changed -> destroying H2 client for fresh reconnect`);
-        destroy_h2_client();
-      }
 
       const response_headers_clean = {};
       for (const [key, value] of Object.entries(response_headers)) {

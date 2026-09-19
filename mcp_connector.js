@@ -5,6 +5,7 @@ const { resolve_route } = require("./routing_table");
 const { build_llm_request, parse_prism_response } = require("./input_transformer");
 const { destroy_h2_client } = require("./proxy_handler");
 const { should_sanitize, sanitize_mcp_params } = require("./intelligence_proxy");
+const prism_chat = require("./prism_chat");
 
 const EXCLUDE_DIRS = new Set([
   "node_modules", ".git", "dist", "build", ".next", ".nuxt",
@@ -469,6 +470,18 @@ function create_mcp_connector(config) {
     return last_result;
   }
 
+  async function full_chat_flow(config, message, options) {
+    try {
+      set_sandbox_state("provisioning");
+      const result = await prism_chat.chat(config, message, options);
+      set_sandbox_state("ready");
+      return result;
+    } catch (err) {
+      set_sandbox_state("error");
+      throw err;
+    }
+  }
+
   async function handle_mcp_request(jsonrpc_request) {
     const { id, method, params } = jsonrpc_request;
 
@@ -516,7 +529,14 @@ function create_mcp_connector(config) {
     try {
       if (route.route_key === "llm.start") {
         await init_session();
-        result = await forward_with_retry_and_simplify(route.method, route.path, request_body, sanitized_params);
+        const message = sanitized_params?.message || sanitized_params?.prompt || sanitized_params?.text || JSON.stringify(sanitized_params);
+        const chat_result = await full_chat_flow(config, message, {
+          model: sanitized_params?.model,
+          max_polls: max_polls,
+          poll_interval: poll_interval,
+        });
+        set_sandbox_state("ready");
+        return jsonrpc_result(id, { text: chat_result.text, conversation_id: chat_result.conversation_id, delta_files: chat_result.delta_files });
       } else {
         result = await forward_to_proxy(route.method, route.path, request_body);
       }
@@ -555,48 +575,12 @@ function create_mcp_connector(config) {
       return jsonrpc_error(id, -32002, `Upstream error: ${result.status}`, result.data);
     }
 
-    if (route.route_key === "llm.start") {
-      return handle_llm_result(id, method, result, sanitized_params);
-    }
-
     const analysis = analyze_response_quality(result.data, method);
     if (analysis.warnings.length > 0) {
       console.log(`[mcp] titan_check warnings: ${analysis.warnings.join(", ")}`);
     }
 
     console.log(`[mcp] request completed: id=${id} method=${method}`);
-    return jsonrpc_result(id, result.data);
-  }
-
-  async function handle_llm_result(id, method, result, params) {
-    const parsed = parse_prism_response(result.data);
-
-    if (parsed.status === "started" && parsed.request_id) {
-      console.log(`[mcp] LLM started, polling for completion... (request_id=${parsed.request_id})`);
-      const final = await poll_llm_status(parsed.request_id, parsed.turn_state);
-      if (final.status === "completed") {
-        console.log(`[mcp] LLM completed with response`);
-        set_sandbox_state("ready");
-        return jsonrpc_result(id, { text: final.text, raw: final.raw });
-      }
-      if (final.status === "unauthorized") {
-        return jsonrpc_error(id, -32001, final.error);
-      }
-      return jsonrpc_error(id, -32003, final.error || "LLM polling failed");
-    }
-
-    if (parsed.status === "completed") {
-      console.log(`[mcp] LLM completed synchronously`);
-      set_sandbox_state("ready");
-      return jsonrpc_result(id, { text: parsed.text, raw: parsed.raw });
-    }
-
-    if (parsed.status === "sandbox_reconnecting") {
-      set_sandbox_state("reconnecting");
-      return jsonrpc_error(id, -32003, `Prism sandbox restarting (state=${sandbox_status.state}, failures=${sandbox_status.consecutive_failures}). Retrying with simplified request...`);
-    }
-
-    console.log(`[mcp] LLM response: status=${parsed.status}`);
     return jsonrpc_result(id, result.data);
   }
 
