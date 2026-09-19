@@ -127,6 +127,77 @@ function replace_all_cookies(new_cookies, config) {
   console.log(`[cookie_manager] all cookies replaced (${Object.keys(new_cookies).length} keys)`);
 }
 
+let _watcher = null;
+let _last_mtime = 0;
+
+function watch_cookies(config, on_change) {
+  const cookies_path = get_cookies_path(config);
+  try {
+    const stat = fs.statSync(cookies_path);
+    _last_mtime = stat.mtimeMs;
+  } catch {}
+
+  if (_watcher) _watcher.close();
+
+  _watcher = fs.watch(cookies_path, (eventType) => {
+    if (eventType !== "change") return;
+    try {
+      const stat = fs.statSync(cookies_path);
+      if (stat.mtimeMs <= _last_mtime) return;
+      _last_mtime = stat.mtimeMs;
+
+      const new_cookies = load_cookies(config);
+      const old_count = Object.keys(new_cookies).length;
+      console.log(`[cookie_manager] file changed, ${old_count} cookies loaded`);
+
+      if (on_change) on_change(new_cookies);
+    } catch (err) {
+      console.error(`[cookie_manager] watch error: ${err.message}`);
+    }
+  });
+
+  console.log(`[cookie_manager] watching ${cookies_path}`);
+  return _watcher;
+}
+
+function stop_watching() {
+  if (_watcher) {
+    _watcher.close();
+    _watcher = null;
+  }
+}
+
+function check_token_validity(config) {
+  const cookies = load_cookies(config);
+  const issues = [];
+
+  if (!cookies.prism_oai_access_token) {
+    issues.push("missing prism_oai_access_token");
+  } else if (cookies.prism_oai_access_token.length < 100) {
+    issues.push("prism_oai_access_token looks invalid (too short)");
+  }
+
+  if (!cookies.prism_session_token) {
+    issues.push("missing prism_session_token");
+  }
+
+  const cf_bm = cookies.__cf_bm;
+  if (!cf_bm) {
+    issues.push("missing __cf_bm (Cloudflare)");
+  } else if (cf_bm.length < 20) {
+    issues.push("__cf_bm looks invalid");
+  }
+
+  return {
+    valid: issues.length === 0,
+    issues,
+    cookie_count: Object.keys(cookies).length,
+    has_access_token: !!cookies.prism_oai_access_token,
+    has_session_token: !!cookies.prism_session_token,
+    has_cf_bm: !!cookies.__cf_bm,
+  };
+}
+
 module.exports = {
   load_cookies,
   load_cookies_full,
@@ -136,4 +207,7 @@ module.exports = {
   capture_set_cookie,
   merge_cookies,
   replace_all_cookies,
+  watch_cookies,
+  stop_watching,
+  check_token_validity,
 };

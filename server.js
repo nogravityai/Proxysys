@@ -13,6 +13,7 @@ const mcp = create_mcp_connector(config);
 app.get("/health", (_req, res) => {
   const cookies_obj = cookie_manager.load_cookies(config);
   const cookie_count = Object.keys(cookies_obj).length;
+  const token_status = cookie_manager.check_token_validity(config);
   res.json({
     status: "ok",
     proxy: "running",
@@ -22,6 +23,7 @@ app.get("/health", (_req, res) => {
     cookies_loaded: cookie_count,
     mcp_endpoint: config.mcp_endpoint,
     timeout_ms: config.timeout_ms,
+    tokens: token_status,
   });
 });
 
@@ -121,7 +123,25 @@ const server = app.listen(config.proxy_port, () => {
   console.log(`[server]   POST /cookies/refresh   -> update cookies manually`);
   console.log(`[server]   *    /*                 -> transparent proxy`);
   console.log(`[server] --------------------------------------------`);
-  console.log(`[server] cookie auto-update: Set-Cookie capture enabled`);
+
+  // Check token validity on startup
+  const token_status = cookie_manager.check_token_validity(config);
+  if (token_status.valid) {
+    console.log(`[server] tokens: VALID (${token_status.cookie_count} cookies)`);
+  } else {
+    console.log(`[server] tokens: ISSUES DETECTED`);
+    for (const issue of token_status.issues) {
+      console.log(`[server]   - ${issue}`);
+    }
+    console.log(`[server]   → Update cookies.json from browser DevTools`);
+  }
+
+  // Watch cookies.json for changes
+  cookie_manager.watch_cookies(config, (new_cookies) => {
+    console.log(`[server] cookies.json updated externally, ${Object.keys(new_cookies).length} cookies`);
+  });
+
+  console.log(`[server] cookie auto-update: Set-Cookie capture + file watcher enabled`);
   console.log(`[server] open http://localhost:${config.proxy_port}/health to verify`);
   console.log(`[server] ============================================`);
 });
@@ -140,6 +160,7 @@ server.on("error", (err) => {
 
 function graceful_shutdown(signal) {
   console.log(`[server] received ${signal}, shutting down...`);
+  cookie_manager.stop_watching();
   server.close(() => {
     console.log("[server] closed all connections");
     process.exit(0);
